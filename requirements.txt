@@ -1,4 +1,5 @@
 fastapi
 uvicorn
-face_recognition
 pillow
+face_recognition
+numpy
