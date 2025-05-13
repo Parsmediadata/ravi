@@ -19,11 +19,15 @@ class EncodingOutput(BaseModel):
 
 def decode_base64_image(base64_string: str) -> np.ndarray:
     try:
+        if base64_string.startswith("data:image"):
+            base64_string = base64_string.split(",")[1]
         image_data = base64.b64decode(base64_string)
-        image = Image.open(io.BytesIO(image_data))
+        image = Image.open(io.BytesIO(image_data)).convert("RGB")
         return np.array(image)
+    except UnidentifiedImageError:
+        raise HTTPException(status_code=400, detail="فرمت تصویر نامعتبر است.")
     except Exception as e:
-        raise ValueError(f"Error decoding image: {e}")
+        raise HTTPException(status_code=400, detail=f"خطا در تبدیل base64 به تصویر: {str(e)}")
 
 @app.post("/encode_face", response_model=EncodingOutput)
 def encode_face(image_input: ImageInput):
