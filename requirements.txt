@@ -1,5 +1,5 @@
-fastapi
-uvicorn
-pillow
-face_recognition
-numpy
+flask
+insightface
+onnxruntime
+opencv-python
+
