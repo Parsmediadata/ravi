@@ -1,51 +1,43 @@
-import base64
-import io
-from typing import List
+# myapp.py
+from flask import Flask, request, jsonify
+import os
+import cv2
+from insightface.app import FaceAnalysis
+from werkzeug.utils import secure_filename
 
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
-from PIL import Image, UnidentifiedImageError
-import numpy as np
-import face_recognition
+app = Flask(__name__)
+UPLOAD_FOLDER = 'uploads'
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-app = FastAPI()
+# آماده‌سازی مدل
+face_app = FaceAnalysis(name='buffalo_l', providers=['CPUExecutionProvider'])
+face_app.prepare(ctx_id=0)
 
-class ImageInput(BaseModel):
-    image_base64: str
+@app.route('/upload', methods=['POST'])
+def upload_file():
+    if 'file' not in request.files:
+        return jsonify({"error": "هیچ فایلی ارسال نشده"}), 400
+    
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({"error": "نام فایل خالی است"}), 400
 
-class EncodingOutput(BaseModel):
-    encodings: List[List[float]]
+    filename = secure_filename(file.filename)
+    file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+    file.save(file_path)
 
-def decode_base64_image(base64_string: str) -> np.ndarray:
-    try:
-        image_data = base64.b64decode(base64_string)
-        image = Image.open(io.BytesIO(image_data)).convert("RGB")  # تبدیل به RGB برای جلوگیری از خطا
-        return np.array(image)
-    except UnidentifiedImageError:
-        raise HTTPException(status_code=400, detail="فرمت تصویر نامعتبر است.")
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"خطا در تبدیل base64 به تصویر: {str(e)}")
+    # بارگذاری و پردازش تصویر
+    image = cv2.imread(file_path)
+    if image is None:
+        return jsonify({"error": "فایل تصویر معتبر نیست"}), 400
 
-@app.post("/encode_face", response_model=EncodingOutput)
-def encode_face(image_input: ImageInput):
-    try:
-        print("📥 Base64 دریافت شد.")
-        img_array = decode_base64_image(image_input.image_base64)
-        print("✅ تصویر با موفقیت decode شد.")
+    faces = face_app.get(image)
+    if not faces:
+        return jsonify({"error": "هیچ چهره‌ای شناسایی نشد"}), 400
 
-        face_locations = face_recognition.face_locations(img_array)
-        print(f"🔍 تعداد چهره‌های شناسایی‌شده: {len(face_locations)}")
+    embedding = faces[0].embedding.tolist()
+    return jsonify({"embedding": embedding})
 
-        if not face_locations:
-            raise HTTPException(status_code=404, detail="هیچ چهره‌ای در تصویر یافت نشد.")
-
-        encodings = face_recognition.face_encodings(img_array, face_locations)
-
-        print("✅ چهره‌ها encode شدند.")
-        return {"encodings": [enc.tolist() for enc in encodings]}
-
-    except HTTPException:
-        raise  # ارورهایی که خودمان تعریف کردیم بدون تغییر دوباره ارسال می‌شود
-    except Exception as e:
-        print(f"❌ خطای کلی: {str(e)}")
-        raise HTTPException(status_code=500, detail="خطای داخلی سرور.")
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=7860)
